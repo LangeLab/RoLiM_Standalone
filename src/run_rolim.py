@@ -1,6 +1,7 @@
 import os
+import re
 import argparse
-import utils # Custom module
+import utils, sequence # Custom modules
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -31,7 +32,7 @@ def parse_arguments() -> argparse.Namespace:
         type=str, 
         choices=['prealigned', 'fasta', 'peptide_list'], 
         help="The format of the foreground input."
-    )
+    ) # TODO: Need to add more options as shown in original
     required.add_argument(
         "-fn", "--foreground_filename", 
         required=True, 
@@ -233,11 +234,64 @@ if __name__ == "__main__":
         context = utils.parse_fasta(args.context_filename, swissprot=True)
     elif args.context_format == 'sequences':
         raise NotImplementedError("Sequence format not implemented yet.")
+    
     ## Step 2: Load compound residues
     if verbose:
         print("2 - Loading Compound Residues")
     ### Load the compound residues either from the default or user-defined file
     compound_residues = utils.load_compound_residues(args.compound_residues)
     ### Save the compound residues definition as a file
-    utils.record_compound_residues_to_file(compound_residues, args.output_path)
+    utils.record_compound_residues_to_file(compound_residues, record_path)
+    
     ## Step 3: Establish background instance
+    if verbose:
+        print("3 - Establishing Background Instance")
+    # Using the sequence.Background class to establish the 
+    #   background instance for context(reference/background/fasta)
+    background = sequence.Background(
+        context['sequence'].tolist(),
+        background_dict=None, # TODO: Not implemented yet
+        compound_residues=compound_residues,
+        position_specific=args.position_specific,
+        width=args.width,
+        center=args.center_sequences,
+        initial_background_size_limit=None, # TODO: Not implemented yet
+        # TODO: The fast=T is actually slower, need to investigate
+        fast=False,
+        # TODO: Adding the usage of pre-computed background
+        precomputed=None
+    )
+    ## Step 4: Establish the foreground instance
+    if verbose:
+        print("4 - Establishing Foreground Instance")
+    ### Check the format of the foreground data
+    if args.foreground_format == 'prealigned':
+        samples = sequence.load_prealigned_file(
+            prealigned_file_path=args.foreground_filename,
+            background=background,
+            center=args.center_sequences,
+            redundancy_level=args.redundancy_level,
+            title=args.analysis_name,
+        )
+    elif args.foreground_format == 'fasta':
+        raise NotImplementedError("Fasta format not implemented yet.")
+    elif args.foreground_format == 'peptide_list':
+        raise NotImplementedError("Peptide list format not implemented yet.")
+    else:
+        raise ValueError("Invalid foreground format.")
+    ## Step 5: Run pattern extraction on the foreground
+    if verbose:
+        print("5 - Running Pattern Extraction on Foreground")
+    ### Split by Unique Sample conditions
+    sample_output_paths = []
+    for sample_name in samples.keys():
+        # TODO: Following is likely cause issues...
+        sample_directory = re.sub(r'\W+', ' ', sample_name).strip().replace(" ", "_")
+        sample_output_path = os.path.join(results_path, sample_directory)
+        sample_output_paths.append((sample_name, sample_output_path))
+    ### Running the analysis for each sample
+    all_pattern_containers = []
+    summary_tables = []
+    for sample_name, sample_output_path in sample_output_paths:
+        if verbose: 
+            print(f"Running analysis for group {sample_name}...")

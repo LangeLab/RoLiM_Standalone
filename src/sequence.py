@@ -1,6 +1,6 @@
 import re
-import json
 import csv
+import json
 import numpy as np
 import pandas as pd
 from collections import Counter
@@ -97,9 +97,11 @@ def get_residue_index(residue, residue_dict):
 
     return residue_index
 
-def vectorize_sequences(data,
-                        background,
-                        empty_position_value=0):
+def vectorize_sequences(
+        data,
+        background,
+        empty_position_value=0
+    ):
     """
 
     Parameters:

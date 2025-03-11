@@ -84,6 +84,16 @@ ParentStats = namedtuple(
     ['pattern_id', 'size', 'bonferroni_m', 'expected_frequency']
 )
 
+PatternFrequency = namedtuple(
+    'PatternFrequency',
+    ['absolute', 'percentage']
+)
+
+PatternSimilarityMatrix = namedtuple(
+    'PatternSimilarityMatrix',
+    ['matrix', 'num_clustered', 'num_unclustered']
+)
+
 ## Default compound residues
 COMPOUND_RESIDUES = {
     '1': CompoundResidue(

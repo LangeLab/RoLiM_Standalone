@@ -127,7 +127,7 @@ def parse_fasta(
 
     return fasta_df
 
-def parse_compound_residues_file(
+def load_compound_residues(
         compound_residues_path: str,
     ) -> dict:
     """    
@@ -175,9 +175,6 @@ def record_compound_residues_to_file(
                 f"{code}\t{specifications.description}\t{';'.join(specifications.residues)}\n"
             )
 
-
-
-# ! Seemingly unused function, need to check how it is used or can be removed
 def convert_encoding(
         sequences: pd.DataFrame,
         encode: int
@@ -421,141 +418,3 @@ def import_substitution_matrix(
     substitution_matrix_df = pd.DataFrame(matrix, index=headers, columns=headers)
 
     return substitution_matrix_df
-
-# def import_background_frequencies(
-#         frequency_set: str
-#     ) -> dict:
-#     """
-#     Generates and returns a dictionary containing background frequencies 
-#     derived from an external source (SWISSPROT, etc.).
-
-#     Args:
-#         frequency_set (str): Path to text file containing amino acid background frequencies.
-
-#     Returns:
-#         dict: Background frequencies from file mapped to amino acids.
-
-#     Examples:
-#         >>> bg_frequencies = import_background_frequencies('path/to/frequencies.txt')
-#         >>> bg_frequencies
-#         {'A': 0.082, 'R': 0.055, 'N': 0.040, 'D': 0.054, 'C': 0.013, ...}
-#     """
-
-#     bg_frequencies = {}
-
-#     with open(frequency_set) as bg_fq:
-#         # reader = csv.reader(bg_fq, delimiter=',')
-#         reader = bg_fq.readlines()
-#         for row in reader:
-#             bg_frequencies[row[0]] = float(row[1])
-
-#     return bg_frequencies
-
-# def generate_possible_substitution_groups(
-#         substitution_probabilities: pd.DataFrame,
-#         bg: dict
-#     ) -> pd.DataFrame:
-#     """
-#     Generates possible substitution groups. Substitution groups are doublets or triplets 
-#     of amino acids for which the average enrichment score of the combination of the amino 
-#     acids into a single group will exceed the average enrichment score of the amino acids 
-#     individually (cutoffs being 0.5 for doublets and 0.33 for triplets).
-
-#     Args:
-#         substitution_probabilities (pd.DataFrame): Contains pairwise substitution probabilities 
-#                                                    for all amino acids in the supplied substitution 
-#                                                    probability matrix.
-#         bg (dict): Contains background frequency of each amino acid in the supplied background 
-#                    frequency file.
-
-#     Returns:
-#         pd.DataFrame: DataFrame containing the possible substitution groups.
-
-#     Examples:
-#         >>> substitution_probabilities = pd.DataFrame(...)
-#         >>> bg = {'A': 8.25, 'R': 5.53, ...}
-#         >>> generate_possible_substitution_groups(substitution_probabilities, bg)
-#         # Returns a DataFrame with substitution groups
-#     """
-
-#     # Generate amino acid list from substitution matrix.
-#     singlet_tuples = [
-#         [i, i, 1, (bg[i] / 100), 1, 0, 0, 0]
-#         for i in substitution_probabilities.index.values.tolist()
-#         if i not in ['B', 'J', 'X', 'Z']
-#     ]
-
-#     # Generate list of possible doublets and list of index-linked probabilities.
-#     doublets = [
-#         ''.join(sorted(list(doublet)))
-#         for doublet in itertools.combinations(sorted([i[0] for i in singlet_tuples]), 2)
-#         if substitution_probabilities[doublet[0]][doublet[1]] > 0.5
-#     ]
-#     doublet_tuples = [
-#         [
-#             doublet, doublet, substitution_probabilities[doublet[0]][doublet[1]],
-#             ((np.sum([bg[r] for r in doublet]) * substitution_probabilities[doublet[0]][doublet[1]]) / 100),
-#             1, 0, 0, 0
-#         ]
-#         for doublet in doublets
-#     ]
-
-#     # Combine doublets into pairs for triplet calculation.
-#     doublet_pairs = [
-#         doublet_pair
-#         for doublet_pair in itertools.combinations(doublets, 2)
-#         if len(set(doublet_pair[0]) & set(doublet_pair[1])) > 0
-#     ]
-
-#     # Initialize triplet list
-#     triplets = []
-#     triplet_tuples = []
-
-#     # Loop through doublet pairs to find possible triplets.
-#     for doublet_pair in doublet_pairs:
-#         # Get union of pair. Continue if union already in triplet list.
-#         union = ''.join(sorted(list(set(doublet_pair[0]) | set(doublet_pair[1]))))
-#         if union in triplets:
-#             continue
-
-#         # Check for intersection between doublets in pair
-#         intersection = set(doublet_pair[0]) & set(doublet_pair[1])
-
-#         # Skip remaining steps if doublets in pair do not have one common member.
-#         if len(intersection) < 1:
-#             continue
-
-#         # Extract list of symmetric difference between doublets for combined probability calculation.
-#         symmetric_difference = list(set(doublet_pair[0]) ^ set(doublet_pair[1]))
-
-#         # Calculate combined probability as product of substitution probability for each member of symmetric difference with intersection.
-#         for i in intersection:
-#             combined_probability = np.prod([substitution_probabilities[i][residue] for residue in symmetric_difference])
-
-#         # If combined probability > 0.33, add union to possible triplet list.
-#         if combined_probability > 0.33:
-#             triplets.append(union)
-#             triplet_tuples.append([
-#                 union, intersection, combined_probability,
-#                 ((np.sum([bg[''.join(list(intersection))] * substitution_probabilities[''.join(list(intersection))][r] for r in symmetric_difference]) +
-#                   np.sum([bg[r] * substitution_probabilities[''.join(list(intersection))][r] for r in symmetric_difference])) / 100),
-#                 1, 0, 0, 0
-#             ])
-
-#     substitution_groups = singlet_tuples + doublet_tuples + triplet_tuples
-
-#     cols = [
-#         'substitutionGroup',
-#         'definingResidue',
-#         'probability',
-#         'backgroundFrequency',
-#         'binomial_p_value',
-#         'standardDeviation',
-#         'frequency',
-#         'enrichment'
-#     ]
-
-#     substitution_group_df = pd.DataFrame(substitution_groups, columns=cols)
-
-#     return substitution_group_df
-
