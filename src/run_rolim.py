@@ -214,7 +214,8 @@ if __name__ == "__main__":
         args = parse_arguments()
         verbose = args.verbose
         if verbose:
-            print("Arguments parsed successfully:")
+            print("Arguments parsed successfully")
+            print("Starting the analysis...\n")
             # print(args)
     except ValueError as e:
         print(f"Error: {e}")
@@ -295,12 +296,14 @@ if __name__ == "__main__":
             context=context,
             background=background,
             center=args.center_sequences,
-            terminal=args.extend_sequences,
-            require_context_id=False,
+            width=args.width,
+            terminal=args.extension_direction,
+            require_context_id=True,
             redundancy_level=args.redundancy_level,
             first_protein_only=args.first_protein_only,
             original_row_merge=args.original_row_merge,
             title=args.analysis_name,
+            verbose=verbose,
         )
     else:
         raise ValueError("Invalid foreground format.")
@@ -322,8 +325,7 @@ if __name__ == "__main__":
     summary_tables = []
     for sample_name, sample_output_path in sample_output_paths:
         if verbose: 
-            print()
-            print(f"Running analysis for group {sample_name}...")
+            print(f" Extracting patterns for group {sample_name}...")
         patterns = extraction.PatternContainer(
             samples[sample_name],
             background,

@@ -77,7 +77,6 @@ def sequences_to_df(
                         to columns by position and accompanying fields
                         as specified above.
     """
-    
     split_sequences = [list(sequence.rstrip().upper()) for sequence in sequences]
     cols = generate_positions(center, len(split_sequences[0]))
     sequence_df = pd.DataFrame(split_sequences, columns=cols)
@@ -136,6 +135,155 @@ def vectorize_sequences(
         )
 
     return sequence_tensor
+
+def empty_position_vector(length, empty_position_value=0):
+    '''
+
+    Parameters:
+        length -- Int. Length of alphabet.
+        empty_position_value -- Int. Expects value of 0 or 1. If 0,
+                                matching amino acids coded as 1. If 0,
+                                matching amino acids coded as 1.
+
+    Returns:
+        empty_position -- 1D Numpy Array.
+    '''
+
+    if empty_position_value == 1:
+        empty_position = np.ones(length, dtype='int8')
+    elif empty_position_value == 0:
+        empty_position = np.zeros(length, dtype='int8')
+
+    return empty_position
+
+def get_pattern_constituents(pattern_matrix, background):
+    """
+    Return pattern featuring all original residues, including compound
+        residues, plus compound residue constituents.
+
+    Parameters:
+        pattern_matrix -- 2D Numpy Array.
+        background -- Background instance.
+
+    Returns:
+        constituent_pattern -- 2D Numpy Array.
+    """
+
+    try:
+        # Extend compound residues with blank.
+        constituents = np.concatenate(
+            (
+                background.compound_residue_matrix,
+                np.zeros(
+                    (1, background.compound_residue_matrix.shape[1]), dtype=np.int8
+                )
+            ),
+            axis=0
+        )
+    except AttributeError as e:
+        raise e
+    else:
+        # Generate index array from pattern matrix.
+        compound_residue_index = np.argmax(pattern_matrix, axis=1) - len(background.alphabet)
+
+        # Map simple positions to blank in compound residue matrix.
+        compound_residue_index[
+            compound_residue_index < 0] = len(background.compound_residue_matrix)
+        
+        # Get compound residue constituents using index array.
+        positional_residue_constituents = constituents[compound_residue_index]
+
+        # Combine constituents with simple fixed residues.
+        fixed_position_residues = np.logical_or(
+            pattern_matrix[:, :len(background.alphabet)],
+            positional_residue_constituents)
+
+        constituent_pattern = np.concatenate(
+            (
+                fixed_position_residues,
+                pattern_matrix[:, len(background.alphabet):]
+            ),
+            axis=1
+        )
+
+        return constituent_pattern
+
+def vectorize_pattern(
+        pattern,
+        background,
+        empty_position_value=0,
+        add_constituents=True,
+        add_compound_residues=True
+    ):
+    '''
+    Takes pattern of Pandas Series type, converts single
+        letter encoding to binary encoding. Returns vectorized
+        pattern as Numpy array.
+
+    Parameters:
+        pattern -- Pandas Series.
+        background -- Instance of Background class.
+        empty_position_value -- Int. Expects value of 0 or 1. If 0,
+                                matching amino acids coded as 1. If 0,
+                                matching amino acids coded as 1.
+    
+    Returns:
+        pattern_matrix -- Numpy Array.
+    '''
+
+    pattern_positions = []
+    for position in pattern:
+        residue = position.strip('[]').upper()
+        
+        position_vector = pd.Series(
+            empty_position_vector(
+                len(background.ordered_residues),
+                empty_position_value
+            ),
+            index=background.ordered_residues
+        )
+
+        # Encode residue with non-null value.
+        if residue in background.ordered_residues:
+            position_vector[residue] = int(not empty_position_value)
+
+        # Add positional residues to pattern.
+        positional_residues = position_vector.tolist()
+        pattern_positions += positional_residues
+
+    # Convert pattern to numpy array.
+    pattern_matrix = np.array(pattern_positions, dtype='int8').reshape(
+        len(pattern),
+        len(background.ordered_residues)
+    )
+
+    try:
+        if add_constituents:
+            # Add constituents to positions containing compound residue
+            constituent_pattern_matrix = get_pattern_constituents(pattern_matrix, background)
+        else:
+            background.compound_residue_matrix
+    except AttributeError:
+        pass
+    else:
+        if add_compound_residues:
+            # Add compound residues matching constituents.
+            compound_residues = np.inner(
+                pattern_matrix[:, :len(background.alphabet)],
+                background.compound_residue_matrix
+            )
+            compound_residue_pattern_matrix = pattern_matrix.copy()
+            compound_residue_pattern_matrix[:, len(background.alphabet):] = compound_residues
+
+            # Combine compound residue and constituent pattern
+            pattern_matrix = np.logical_or(
+                constituent_pattern_matrix,
+                compound_residue_pattern_matrix
+            ).astype(np.int8)
+        elif add_constituents:
+            pattern_matrix = constituent_pattern_matrix
+
+    return pattern_matrix
 
 def load_prealigned_file(
         prealigned_file_path,
@@ -286,11 +434,11 @@ def match_segment_to_context(
 
     # Set of unique non-prime matches in context sequence.
     for match in re.finditer(segment, context_element):
-        if terminal == 'n' or terminal == 'N':
+        if terminal in ['n', 'N']:
             matches.n_term.add(
                 extend_sequence(match, context_element, width, non_prime_width, 'n')
             )
-        elif terminal == 'c' or terminal == 'C':
+        elif terminal in ['c', 'C']:
             matches.c_term.add(
                 extend_sequence(match, context_element, width, non_prime_width, 'c')
             )
@@ -305,8 +453,11 @@ def match_segment_to_context(
     return matches
 
 def get_all_ids_from_context(context, precomputed):
-    if precomputed is not None and os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
-        context_ids = context['swissprot_id'].tolist()
+    if precomputed is not None:
+        if os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
+            context_ids = context['swissprot_id'].tolist()
+        else:
+            context_ids = context['id'].tolist()
     else:
         context_ids = context['id'].tolist()
 
@@ -374,8 +525,8 @@ def align_sequences(
                         'sequence' (sequence strings),
                     ]
         width -- Int. Number of positions in aligned sequence output.
-        terminal -- String. 'n' for extension of N-term sequences,
-                        'c' for extension of C-term sequences,
+        terminal -- String. 'n' or 'N' for extension of N-term sequences,
+                        'c' or 'C' for extension of C-term sequences,
                         'both' for extension of intact peptides.
 
     Returns:
@@ -390,6 +541,8 @@ def align_sequences(
     # Remove exact peptides and protein ID duplicates unless disabled.
     if redundancy_level != 'none':
         sequences.drop_duplicates(inplace=True) 
+    
+    # print('Aligning {} sequences to {} context elements'.format(len(sequences), len(context)))
 
     # Generate aligned sequence by mapping sequence segments to context.
     aligned_sequences = []
@@ -416,29 +569,33 @@ def align_sequences(
             # Otherwise exclude sequence.
             elif len(max(context_ids, key=len)) == 0:
                 continue
+            # Match against provided IDs.
             else:
                 swissprot_ids = []
                 context_elements = []
+                # Get context sequences using provided ID.
                 for context_id in context_ids:
                     # Special case for precoumpted human Swiss-Prot.
-                    if precomputed is not None and os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
-                        parsed_id = utils.extract_accid(context_id)
-                        if SWISSPROT_ACCESSION_PATTERN.match(parsed_id):
-                            swissprot_sequences = context[
-                                context['swissprot_id'] == parsed_id
-                            ]['sequence'].tolist()
-                            num_sequences = len(swissprot_sequences)
-                            if  num_sequences == 1:
-                                swissprot_ids.append(parsed_id)
-                                context_elements += swissprot_sequences
-                                if first_protein_only:
-                                    break
-                            elif num_sequences > 1:
-                                raise AssertionError(
-                                    '{} was found more than one time in the proteome.'.format(
-                                        parsed_id
+                    if precomputed is not None:
+                        if os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
+                            parsed_id = utils.extract_accid(context_id)
+                            if SWISSPROT_ACCESSION_PATTERN.match(parsed_id):
+                                swissprot_sequences = context[
+                                    context['swissprot_id'] == parsed_id
+                                ]['sequence'].tolist()
+                                num_sequences = len(swissprot_sequences)
+                                if  num_sequences == 1:
+                                    swissprot_ids.append(parsed_id)
+                                    context_elements += swissprot_sequences
+                                    if first_protein_only:
+                                        break
+                                elif num_sequences > 1:
+                                    raise AssertionError(
+                                        '{} was found more than one time in the proteome.'.format(
+                                            parsed_id
+                                        )
                                     )
-                                )
+                    # If not precomputed, use contexts
                     else:
                         # Get context sequences using provided ID.
                         context_sequences, num_sequences = get_context_sequences(context_id, context)
@@ -454,16 +611,22 @@ def align_sequences(
                             )
                 if len(swissprot_ids) > 0:
                     context_ids = swissprot_ids
+        
+        # print('Sequence: ', sequence['sequence'])
+        # print('Aligning sequence {} to {} context elements'.format(i, len(context_elements)))
+        # print("Context IDs: ", context_ids)
+        # print("Context Elements: ", context_elements) # context_elements are protein sequences
+        # print("Width: ", width, "Non-prime width: ", non_prime_width, "Terminal: ", terminal)
 
         # Regular expression matching of sequence to context.
         extended_sequences = {}
         for j, context_element in enumerate(context_elements):
             matches = match_segment_to_context(
-                sequence['sequence'].rstrip().upper(),
-                context_element,
-                width,
-                non_prime_width,
-                terminal
+                segment = sequence['sequence'].rstrip().upper(),
+                context_element = context_element,
+                width = width,
+                non_prime_width = non_prime_width,
+                terminal = terminal
             )
             if matches.n_term or matches.c_term:
                 context_id = context_ids[j]
@@ -475,7 +638,7 @@ def align_sequences(
                     extended_sequences[context_id].n_term.add(n_term_match)
                 for c_term_match in sorted(list(matches.c_term)):
                     extended_sequences[context_id].c_term.add(c_term_match)
-
+        
         # Add all aligned instances of peptide if redundancy_level is 'none'.
         if original_row_merge == 'none':
             for context_id, context_element_matches in extended_sequences.items():
@@ -516,13 +679,11 @@ def align_sequences(
                     [i, merge_sequences(all_extended_sequences.c_term), context_id]
                 )
 
-
     # Generate aligned sequence data frame for redundancy processing.
     aligned_sequences_df = pd.DataFrame(
         aligned_sequences,
         columns=['original_row', 'extended_sequence', 'context_id']
     )
-
     # Redundancy handling.
     if redundancy_level == 'protein':
         aligned_sequences_df.drop_duplicates(
@@ -616,6 +777,7 @@ def peptides_to_sample(
         require_context_id=require_context_id,
         precomputed=background.precomputed
     )
+    
     sequence_df = sequences_to_df(
         aligned_sequences,
         center=center,
@@ -677,7 +839,8 @@ def load_peptide_list_file(
         redundancy_level='none',
         first_protein_only=True,
         original_row_merge='all',
-        title=''
+        title='',
+        verbose=False
     ):
     """
     Top-level helper function to load and extend peptides from text
@@ -712,7 +875,6 @@ def load_peptide_list_file(
             peptide_list_file,
             delimiter=delimiter
         )
-    
     try:
         sample_peptides = dict(tuple(peptide_list.groupby('sample_name')))
     except:
@@ -720,6 +882,8 @@ def load_peptide_list_file(
 
     samples = {}
     for sample_name, peptides in sample_peptides.items():
+        if verbose:
+            print(' Processing sample {} with {} Peptides'.format(sample_name, len(peptides)))
         samples[str(sample_name)] = peptides_to_sample(
             peptides,
             context,

@@ -257,7 +257,7 @@ def calculate_pattern_similarity_matrix(
         sequence_scores = []
         for j, pattern in enumerate(pattern_list):
             position_scores = []
-            for position, residue in pattern.character_pattern().iteritems():
+            for position, residue in pattern.character_pattern().items():
                 stripped_residue = residue.strip('[]')
                 if stripped_residue != '.':
                     if stripped_residue in pattern.background.alphabet:
@@ -773,7 +773,7 @@ def generate_figures(
         )
 
         # Pattern similarity clustermap.
-        if np.any(pattern_similarity_matrix.to_numpy().astype(np.bool)):
+        if np.any(pattern_similarity_matrix.to_numpy().astype(bool)):
             try:
                 generate_sequence_clustermap(
                     clustermap_title,
