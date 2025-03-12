@@ -1400,9 +1400,13 @@ class PatternContainer:
 
         # Initialize pattern template.
         if initial_pattern == None:
-            initial_pattern = np.zeros((self.sample.sequence_tensor.shape[1],
-                                    len(background.ordered_residues)),
-                                    dtype=np.int8)
+            initial_pattern = np.zeros(
+                (
+                    self.sample.sequence_tensor.shape[1],
+                    len(background.ordered_residues)
+                ),
+                dtype=np.int8
+            )
         if initial_removed_positional_residues == None:
             initial_removed_positional_residues = initial_pattern
 

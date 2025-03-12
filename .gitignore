@@ -49,6 +49,5 @@ ipython_config.py
 **/*.html
 
 # data and figures folder within each folder is ignored
-**/data/
 **/figures/
 **/sandbox/

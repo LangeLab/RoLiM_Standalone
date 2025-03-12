@@ -868,13 +868,8 @@ def load_peptide_list_file(
 
     # Detect delimiter from file extension (supports comma or tab).
     delimiter = detect_delimiter(peptide_list_path)
-
-    # open peptide list file
-    with open(peptide_list_path, 'r') as peptide_list_file:
-        peptide_list = import_peptide_list(
-            peptide_list_file,
-            delimiter=delimiter
-        )
+    peptide_list = import_peptide_list( peptide_list_path, delimiter=delimiter )
+    
     try:
         sample_peptides = dict(tuple(peptide_list.groupby('sample_name')))
     except:
@@ -883,7 +878,7 @@ def load_peptide_list_file(
     samples = {}
     for sample_name, peptides in sample_peptides.items():
         if verbose:
-            print(' Processing sample {} with {} Peptides'.format(sample_name, len(peptides)))
+            print('\t - Processing sample {} with {} Peptides'.format(sample_name, len(peptides)))
         samples[str(sample_name)] = peptides_to_sample(
             peptides,
             context,

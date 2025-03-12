@@ -325,7 +325,7 @@ if __name__ == "__main__":
     summary_tables = []
     for sample_name, sample_output_path in sample_output_paths:
         if verbose: 
-            print(f" Extracting patterns for group {sample_name}...")
+            print(f"\t - Extracting patterns for group {sample_name}...")
         patterns = extraction.PatternContainer(
             samples[sample_name],
             background,
@@ -364,6 +364,7 @@ if __name__ == "__main__":
         all_pattern_containers.append(patterns)
 
     ## Step 6: Generate the summary table
+    # TODO: Extremely slow, need to investigate...
     if verbose:
         print("6 - Generating Summary Table")
     # Add sequence summary table to summary output directory.
