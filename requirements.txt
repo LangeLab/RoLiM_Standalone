@@ -1,0 +1,7 @@
+scipy==1.10.1
+pandas==1.1.5
+numpy==1.19.5
+pymysql==1.0.2
+matplotlib==3.7.2
+seaborn==0.12.2
+weblogo==3.7.12

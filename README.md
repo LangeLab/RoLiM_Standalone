@@ -1,12 +1,120 @@
-# RoLiM_Standalone
+# RoLiM - Robust Linear Motif Deconvolution
 
-RoLiM (Robust Likelihood Method) is a standalone tool for the analysis of residue enrichment in protein sequences. The tool is designed to identify positions and residues that are significantly enriched in a foreground dataset compared to a background dataset. RoLiM uses a robust likelihood method to calculate the enrichment scores and p-values for each position and residue in the sequences. The analysis results include the enriched positions and residues, their statistical significance, and other relevant information.
+The standalone version of the RoLiM, which allows for the detection of statistically enriched patterns in protein sequence data sets.
 
-## Installation
+The local sequence context is the most fundamental feature determining proteins' post-translational modification (PTM). Recent technological improvements allow for the detection of new and less prevalent modifications. We found that established state-of-the-art algorithms for the detection of PTM motifs in complex datasets failed to keep up with this technological development and are no longer robust. To overcome this limitation, we developed RoLiM, a new linear motif deconvolution algorithm and a web server that enables robust and unbiased identification of local amino acid sequence determinants in complex biological systems.
 
-To install the RoLiM standalone tool, follow these steps:
+## Installation and Setup
 
-| WIP: Installation instructions will be provided here. |
+This guide outlines the installation and setup process for the application, including Python environment setup, dependency installation, and MySQL database configuration.
+
+**1. Python Installation:**
+
+* Ensure you have Python 3.9 or a later version installed. You can download the latest version from [python.org](https://www.python.org/downloads/).
+* Verify the installation by running `python3 --version` (or `python --version` on some systems) in your terminal.
+
+**2. Virtual Environment Setup (Recommended):**
+
+* Create a virtual environment to isolate project dependencies:
+
+    ```bash
+    python3 -m venv venv
+    ```
+
+* Activate the virtual environment:
+
+    * On macOS/Linux:
+
+        ```bash
+        source venv/bin/activate
+        ```
+
+    * On Windows:
+
+        ```bash
+        venv\Scripts\activate
+        ```
+
+**3. Dependency Installation:**
+
+* Install the required Python packages from the `requirements.txt` file:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+**4. MySQL Installation:**
+
+* Install MySQL on your system. Installation instructions vary depending on your operating system. Refer to the official MySQL documentation for details.
+
+**5. MySQL Database Setup:**
+
+* Start a MySQL session:
+
+    ```bash
+    sudo mysql
+    ```
+
+* Create the `patterndetection` database:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS patterndetection;
+    ```
+
+* Create user and grant privileges for `patterndetection` database:
+
+    ```sql
+    CREATE USER "zigzag"@"localhost" identified by "MyStrongP@ss123";
+    GRANT ALL PRIVILEGES ON patterndetection.* TO 'zigzag'@'localhost';
+    ```
+
+* Create the `merops` database:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS merops;
+    ```
+
+* Grant privileges for `merops` database:
+
+    ```sql
+    GRANT ALL PRIVILEGES ON merops.* TO 'zigzag'@'localhost';
+    ```
+
+* Apply the changes:
+
+    ```sql
+    FLUSH PRIVILEGES;
+    ```
+
+* Exit mysql:
+
+    ```sql
+    exit;
+    ```
+
+**6. Populating the MySQL Databases:**
+
+* Navigate to the `/data` directory:
+
+    ```bash
+    cd data
+    ```
+
+* Run the `populate_dbs.sh` script:
+
+    ```bash
+    chmod +x populate_dbs.sh && ./populate_dbs.sh
+    ```
+
+> **Important:**  
+    - *Ensure the MySQL server is running.*
+    - *The username and password here is an example and should be replaced with the actual credentials used during the MySQL setup.*
+    - *Verify the MySQL credentials in the `populate_dbs.sh` script match what you set up.*
+    - *Verify the socket path in the script is correct for your system.*
+
+**7. Using the Application:**
+
+* Run the application from the project's root directory using the `python -m src.run_rolim` command, providing the required arguments. Refer to the example usage section and detailed parameter descriptions for more information.
 
 ## Example Usage
 
@@ -230,5 +338,3 @@ This section describes the required and optional parameters for the main functio
     * **Requirements:** Optional
     * **Validations:** Must be one of: `none`, `sequence`, `protein`.
     * **Documentation:** Selects the level of redundancy elimination in the foreground dataset. 'none' disables redundancy elimination, 'sequence' eliminates redundant sequences from the foreground dataset, and 'protein' eliminates redundant proteins (with the same id) from the foreground dataset.
-
-
