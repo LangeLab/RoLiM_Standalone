@@ -1,15 +1,18 @@
+import os
 import re
 import time
-from tqdm import tqdm
+import datetime
+import argparse
 
 import numpy as np
 import pandas as pd
 
-from .globals import (
+from src.globals import CompoundResidue
+from src.globals import (
     SINGLE_LETTER_CODES, SWISSPROT_ACCESSION_PATTERN,
-    COMPOUND_RESIDUES, CompoundResidue,
-    encode_3to1, encode_1to3
+    COMPOUND_RESIDUES, encode_3to1, encode_1to3
 )
+
 
 def getTime() -> float:
     """
@@ -45,6 +48,45 @@ def prettyTimer(
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     return "%02dh:%02dm:%02ds" % (h, m, s)
+
+def log_analysis_parameters(
+        args: argparse.Namespace, 
+        log_file_path: str, 
+        timepassed: float
+    ) -> None:
+    """
+    Writes the analysis parameters from argparse.Namespace to a log file.
+
+    Args:
+        args: The argparse.Namespace object containing the parsed arguments.
+        log_file_path: The path to the log file to create or append to.
+    """
+
+    with open(log_file_path, 'w') as log_file:
+        log_file.write(f"Title: {args.analysis_name}\n")
+        log_file.write(f"Submitted: {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n")
+        log_file.write(f"Foreground file: {os.path.basename(args.foreground_filename)}\n")
+        log_file.write(f"Foreground format: {args.foreground_format.capitalize()}\n")
+        log_file.write(f"Context file: {os.path.basename(args.context_filename)}\n")
+        log_file.write(f"Context format: {args.context_format.capitalize()}\n")
+        log_file.write(f"P-value cutoff: {args.p_value_cutoff}\n")
+        log_file.write(f"Minimum occurrences: {args.min_occurrence}\n")
+        log_file.write(f"Fold difference cutoff: {args.fold_change_cutoff}\n")
+        log_file.write(f"Max depth: {args.max_depth}\n")
+        log_file.write(f"Sequence extension: {getattr(args, 'extend_sequences', False)}\n")
+        log_file.write(f"Extension direction: {args.extension_direction.lower()}\n")
+        log_file.write(f"Require protein identifiers: {getattr(args, 'first_protein_only', True)}\n")
+        log_file.write(f"Width: {args.width}\n")
+        log_file.write(f"Centered sequences: {args.center_sequences}\n")
+        log_file.write(f"Redundancy elimination level: {args.redundancy_level}\n")
+        log_file.write(f"Merge multiple aligned peptides from same original row: {args.original_row_merge}\n")
+        log_file.write(f"Multiple testing correction: {args.correction_method}\n")
+        log_file.write(f"Positional weighting: {args.positional_weighting}\n")
+        log_file.write(f"Position specific background: {args.position_specific}\n")
+        log_file.write(f"Compound residue detection: {args.enable_compound_grouping}\n")
+        log_file.write(f"Compound residue decomposition: {getattr(args, 'enable_compound_grouping', False)}\n") # compound detection and decompostion are the same arg in this case.
+        log_file.write(f"Compound residue file: {args.compound_residues}\n")
+        log_file.write(f"Time elapsed: {prettyTimer(timepassed)}\n")
 
 def extract_accid(
         identifier: str
@@ -164,7 +206,7 @@ def record_compound_residues_to_file(
     Writes the compound residues dictionary to a file for record keeping.
     """
     # Define the filepath
-    file_path = current_path + 'compound_residues_definition.txt'
+    file_path = current_path + '/compound_residues_definition.txt'
     # Open the file and write the data
     with open(file_path, 'w') as f:
         # Write header

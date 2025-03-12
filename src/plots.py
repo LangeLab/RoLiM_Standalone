@@ -7,9 +7,9 @@ import matplotlib.cm as cm
 import seaborn as sns
 import weblogo
 
-from . import sequence, extraction, utils, merops
-from .globals import PatternFrequency, PatternSimilarityMatrix
-from .globals import CATALYTIC_TYPES
+from src import sequence, extraction, utils, merops
+from src.globals import PatternFrequency, PatternSimilarityMatrix
+from src.globals import CATALYTIC_TYPES
 
 CLUSTERMAP_ROW_COLORS = [
     'e1e1e1',               # Light grey color for 0.
@@ -340,7 +340,9 @@ def calculate_pattern_frequency(pattern):
 
     # Get number of matching sequences from intersection.
     absolute_frequency = positional_matches[
-        positional_matches == np.sum(np.any(constituent_pattern, axis=1).astype(np.int8))
+        positional_matches == np.sum(
+            np.any(constituent_pattern, axis=1).astype(np.int8)
+        )
     ].shape[0]
 
     # Calculate percentage frequency from absolute frequency.

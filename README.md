@@ -162,3 +162,63 @@ This section describes the required and optional parameters for the main functio
     * **Requirements:** Optional
     * **Validations:** Must be one of: `none`, `sequence`, `protein`.
     * **Documentation:** Selects the level of redundancy elimination in the foreground dataset. 'none' disables redundancy elimination, 'sequence' eliminates redundant sequences from the foreground dataset, and 'protein' eliminates redundant proteins (with the same id) from the foreground dataset.
+
+### III. Example Usage
+
+The following example contains all the required and optional parameters for the main function of the RoLiM standalone tool. The example demonstrates how to set up an analysis with the specified parameters.
+
+```bash
+python -m src.run_rolim \
+    --analysis_name "prealigned_test" \
+    --foreground_format "prealigned" \
+    --foreground_filename "data/prealigned_text_file.txt" \
+    --context_format "fasta" \
+    --context_filename "data/uniprot.fasta" \
+    --width 15 \
+    --output_path "data" \
+    --precomputed "" \
+    --p_value_cutoff 0.001 \
+    --fold_change_cutoff 1.0 \
+    --correction_method "fdr_bh" \
+    --min_occurrence 20 \
+    --extension_direction "N" \
+    --center_sequences \
+    --positional_weighting \
+    --enable_compound_grouping \
+    --position_specific \
+    --redundancy_level "none" \
+    --first_protein_only \
+    --original_row_merge "all" \
+    --generate_logo_maps \
+    --verbose
+```
+
+This can be run from the main directory and don't need to be in the src directory. The `--verbose` flag is optional and can be used to display additional information during the analysis. The example demonstrates how to set up an analysis with prealigned sequences as the foreground input, fasta sequences as the context input, and various optional parameters to customize the analysis.
+
+The following is a non-prealigned example:
+
+```bash
+python -m src.run_rolim \
+    --analysis_name "peptideList_test" \
+    --foreground_format "peptide_list" \
+    --foreground_filename "data/text_file_peptide_list.txt" \
+    --context_format "fasta" \
+    --context_filename "data/uniprot.fasta" \
+    --width 8 \
+    --output_path "data" \
+    --precomputed "" \
+    --p_value_cutoff 0.001 \
+    --fold_change_cutoff 1.0 \
+    --correction_method "fdr_bh" \
+    --min_occurrence 20 \
+    --extension_direction "N" \
+    --center_sequences \
+    --positional_weighting \
+    --enable_compound_grouping \
+    --position_specific \
+    --redundancy_level "none" \
+    --first_protein_only \
+    --original_row_merge "all" \
+    --generate_logo_maps \
+    --verbose
+```

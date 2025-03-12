@@ -5,9 +5,9 @@ import pymysql.cursors
 import pandas as pd
 import numpy as np
 
-from . import plots, utils, extraction, sequence
+from src import plots, utils, extraction, sequence
 
-from .globals import (
+from src.globals import (
     COMPOUND_RESIDUES,
     SITES, MEROPS_POSITIONS, 
     THREE_LETTER_CODES, SINGLE_LETTER_CODES

@@ -1,7 +1,8 @@
 import os
 import re
 import argparse
-import utils, sequence # Custom modules
+import pandas as pd
+from src import utils, sequence, extraction # Custom modules
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -60,6 +61,12 @@ def parse_arguments() -> argparse.Namespace:
         type=str, 
         default=os.getcwd(), 
         help="The path to the output directory (default: current directory)."
+    )
+    optional.add_argument(
+        "-pc", "--precomputed",
+        type=str,
+        default=None,
+        help="The path to the precomputed file for various uses. (default: None)"
     )
     optional.add_argument(
         "-p", "--p_value_cutoff", 
@@ -160,6 +167,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Select original row merge (default: all)."
     )
     optional.add_argument(
+        "--generate_logo_maps",
+        action='store_true',
+        default=False,
+        help="Generate logo maps (default: False)."
+    )
+    optional.add_argument(
         "-v", "--verbose", 
         action='store_true', 
         default=False, 
@@ -195,14 +208,14 @@ def parse_arguments() -> argparse.Namespace:
 
 # Run the script
 if __name__ == "__main__":
-    
+    st = utils.getTime()
     # Parse command-line arguments
     try:
         args = parse_arguments()
         verbose = args.verbose
         if verbose:
             print("Arguments parsed successfully:")
-            print(args)
+            # print(args)
     except ValueError as e:
         print(f"Error: {e}")
     except FileNotFoundError as e:
@@ -224,7 +237,7 @@ if __name__ == "__main__":
     if not os.path.exists(results_path):
         os.makedirs(results_path)
     
-    # Run the complete analysis
+    # Run the complete analysis   
 
     ## Step 1: Load the Context Data
     if verbose:
@@ -259,8 +272,9 @@ if __name__ == "__main__":
         # TODO: The fast=T is actually slower, need to investigate
         fast=False,
         # TODO: Adding the usage of pre-computed background
-        precomputed=None
+        precomputed=args.precomputed,
     )
+
     ## Step 4: Establish the foreground instance
     if verbose:
         print("4 - Establishing Foreground Instance")
@@ -276,12 +290,25 @@ if __name__ == "__main__":
     elif args.foreground_format == 'fasta':
         raise NotImplementedError("Fasta format not implemented yet.")
     elif args.foreground_format == 'peptide_list':
-        raise NotImplementedError("Peptide list format not implemented yet.")
+        samples = sequence.load_peptide_list_file(
+            args.foreground_filename,
+            context=context,
+            background=background,
+            center=args.center_sequences,
+            terminal=args.extend_sequences,
+            require_context_id=False,
+            redundancy_level=args.redundancy_level,
+            first_protein_only=args.first_protein_only,
+            original_row_merge=args.original_row_merge,
+            title=args.analysis_name,
+        )
     else:
         raise ValueError("Invalid foreground format.")
+    
     ## Step 5: Run pattern extraction on the foreground
     if verbose:
         print("5 - Running Pattern Extraction on Foreground")
+    
     ### Split by Unique Sample conditions
     sample_output_paths = []
     for sample_name in samples.keys():
@@ -289,9 +316,84 @@ if __name__ == "__main__":
         sample_directory = re.sub(r'\W+', ' ', sample_name).strip().replace(" ", "_")
         sample_output_path = os.path.join(results_path, sample_directory)
         sample_output_paths.append((sample_name, sample_output_path))
+    
     ### Running the analysis for each sample
     all_pattern_containers = []
     summary_tables = []
     for sample_name, sample_output_path in sample_output_paths:
         if verbose: 
+            print()
             print(f"Running analysis for group {sample_name}...")
+        patterns = extraction.PatternContainer(
+            samples[sample_name],
+            background,
+            str(sample_name),
+            sample_output_path,
+            initial_pattern=None,
+            initial_removed_positional_residues = None,
+            max_depth=args.max_depth,
+            p_value_cutoff=args.p_value_cutoff,
+            minimum_occurrences=args.min_occurrence,
+            fold_change_cutoff=args.fold_change_cutoff,
+            multiple_testing_correction=args.correction_method,
+            positional_weighting=args.positional_weighting,
+            # Att: Likely Not used...
+            allow_compound_residue_decomposition=args.enable_compound_grouping,
+            set_reduction = True,
+            verbose=verbose,
+        )
+        if (args.width == 8) and args.center_sequences:
+            summary_tables.append(
+                patterns.post_processing(
+                    proteolysis_data=True,
+                    cluster_sequences=True,
+                    logo_maps=args.generate_logo_maps, 
+                )
+            )
+        else:
+            summary_tables.append(
+                patterns.post_processing(
+                    proteolysis_data=False,
+                    cluster_sequences=False,
+                    logo_maps=args.generate_logo_maps,
+                )
+            )
+
+        all_pattern_containers.append(patterns)
+
+    ## Step 6: Generate the summary table
+    if verbose:
+        print("6 - Generating Summary Table")
+    # Add sequence summary table to summary output directory.
+    if len(summary_tables) > 1:
+        unique_pattern_strings = []
+        unique_pattern_list = []
+        for pattern_container in all_pattern_containers:
+            for pattern in pattern_container.pattern_list:
+                pattern_string = ''.join(pattern.character_pattern())
+                if pattern_string not in unique_pattern_strings:
+                    unique_pattern_strings.append(pattern_string)
+                    unique_pattern_list.append(pattern)
+        all_original_sequences = pd.concat(
+            [sample.original_sequences for sample in samples.values()]
+        )
+        summary_table = extraction.PatternContainer.generate_summary_table(
+            all_original_sequences,
+            unique_pattern_list
+        )
+        summary_table.to_csv(
+            os.path.join(results_path, f'{args.analysis_name}_summary_table.txt'),
+            index=False, header=True, sep='\t'
+        )
+    
+    ## Step 7: Record the analysis parameters
+    if verbose:
+        print("7 - Recording Analysis Parameters")
+    elapsed = utils.getTime() - st
+    if verbose:
+        print(f"Elapsed time: {utils.prettyTimer(elapsed)}")
+    # Call the log function
+    utils.log_analysis_parameters(
+        args, os.path.join(record_path, "analysis_parameters.log"), elapsed
+    )
+

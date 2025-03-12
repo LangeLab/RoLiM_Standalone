@@ -3,6 +3,15 @@ from collections import namedtuple
 
 ## Define the global variables
 
+# TODO: This is a placeholder would need to make use of precomputed files
+PRECOMPUTED_FILES = {
+    'MEROPS': 'data/merops_precomputed.csv',
+    'PHOSPHO': 'data/phospho_precomputed.csv',
+    'SWISSPROT': 'data/swissprot_precomputed.csv',
+    'UNIPROT': 'data/uniprot_precomputed.csv',
+    'swissprot_human': 'data/swissprot_human_precomputed.csv',
+}
+
 # regex pattern for swissprot (uniprot) accession
 SWISSPROT_ACCESSION_PATTERN = re.compile(
     r"[OPQ][0-9][A-Z0-9]{3}[0-9](-\d+)?|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}(-\d+)?"

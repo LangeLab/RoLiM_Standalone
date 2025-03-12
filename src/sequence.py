@@ -1,3 +1,4 @@
+import os
 import re
 import csv
 import json
@@ -6,7 +7,11 @@ import pandas as pd
 from collections import Counter
 from typing import List, Dict, Optional, Union
 
-from .globals import COMPOUND_RESIDUES, CompoundResidue, Sample
+from src import utils
+from src.globals import CompoundResidue, Sample, ExtendedSequences
+from src.globals import (
+    COMPOUND_RESIDUES, SWISSPROT_ACCESSION_PATTERN, PRECOMPUTED_FILES
+)
 
 def detect_delimiter(file_path):
     # Detect delimiter from file extension (supports comma or tab).
@@ -51,9 +56,11 @@ def generate_positions(center, num_positions):
 
     return positions
 
-def sequences_to_df(sequences,
-                    center=True,
-                    redundancy_level='sequence'):
+def sequences_to_df(
+        sequences,
+        center=True,
+        redundancy_level='sequence'
+    ):
     """
     Split sequence strings to Pandas DataFrame with one column per
         position.
@@ -115,7 +122,7 @@ def vectorize_sequences(
 
     residue_dict = {residue: i for i, residue in enumerate(background.ordered_residues)}
     # Construct tensor from residue indices.
-    index_array = data.applymap(
+    index_array = data.map(
         lambda x: get_residue_index(x, residue_dict)
     ).to_numpy(dtype=np.int8)
     sequence_tensor = np.eye(len(background.ordered_residues), dtype=np.int8)[index_array]
@@ -130,11 +137,13 @@ def vectorize_sequences(
 
     return sequence_tensor
 
-def load_prealigned_file(prealigned_file_path,
-                            background,
-                            center=True,
-                            redundancy_level='none',
-                            title=''):
+def load_prealigned_file(
+        prealigned_file_path,
+        background,
+        center=True,
+        redundancy_level='none',
+        title=''
+    ):
     """
     Top-level helper function to load pre-aligned sequences from text
         file.
@@ -194,6 +203,538 @@ def load_prealigned_file(prealigned_file_path,
     
     return samples
 
+def merge_sequences(matches):
+    """
+    If multiple possible sequence extensions are found in proteome,
+        combine matches to single sequence with ambiguous positions
+        coded as 'X'.
+
+    Parameters:
+        matches -- Set.
+
+    Returns:
+        merged_sequence -- String.
+    """
+
+    # Convert matches to data frame for disambiguation.
+    matches = pd.DataFrame([list(match) for match in sorted(list(matches))])
+    # Merge unique matches with 'X' in ambiguous positions.
+    merged_sequence = ''.join((matches.loc[0, i] if unambiguous else 'X'
+                    for i, unambiguous
+                    in enumerate(matches.nunique(axis=0) == 1)))
+
+    return merged_sequence
+
+def extend_sequence(
+        match, 
+        context_element, 
+        width, 
+        non_prime_width, 
+        terminal
+    ):
+    """
+    Extend sequence in X-terminal direction.
+
+    Parameters:
+        match -- Match object.
+        width -- Int.
+        non_prime_width -- Int.
+        terminal -- String.
+
+    Returns:
+        extended_sequence -- String.
+    """
+    
+    if terminal == 'n':
+        match_index = match.start(0)
+    elif terminal == 'c':
+        match_index = match.end(0)
+
+    start = (
+        match_index - non_prime_width if match_index >= non_prime_width else 0
+    )
+    end = match_index + width - non_prime_width
+    non_prime = context_element[start:match_index].rjust(non_prime_width, '-')
+    prime = context_element[match_index:end].ljust(width - non_prime_width, '-')
+    extended_sequence = non_prime + prime
+
+    return extended_sequence
+
+def match_segment_to_context(
+        segment,
+        context_element,
+        width,
+        non_prime_width,
+        terminal
+    ):
+    """
+    Regular expression match of segment string to context element
+        string. Return matches.
+
+    Parameters:
+        segment -- String.
+        context_element -- String.
+        width -- Int.
+        non_prime_width -- Int.
+        terminal -- String. 'n', 'c', or both.
+
+    Returns:
+        matches -- Set.
+    """
+
+    matches = ExtendedSequences(n_term=set(), c_term=set())
+
+    # Set of unique non-prime matches in context sequence.
+    for match in re.finditer(segment, context_element):
+        if terminal == 'n' or terminal == 'N':
+            matches.n_term.add(
+                extend_sequence(match, context_element, width, non_prime_width, 'n')
+            )
+        elif terminal == 'c' or terminal == 'C':
+            matches.c_term.add(
+                extend_sequence(match, context_element, width, non_prime_width, 'c')
+            )
+        elif terminal == 'both':
+            matches.n_term.add(
+                extend_sequence(match, context_element, width, non_prime_width, 'n')
+            )
+            matches.c_term.add(
+                extend_sequence(match, context_element, width, non_prime_width, 'c')
+            )
+
+    return matches
+
+def get_all_ids_from_context(context, precomputed):
+    if precomputed is not None and os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
+        context_ids = context['swissprot_id'].tolist()
+    else:
+        context_ids = context['id'].tolist()
+
+    return context_ids
+
+def check_context_id_types(context_id, context_id_types, context):
+    for context_id_type in context_id_types:
+        context_sequences = context[
+            context[context_id_type] == context_id
+        ]['sequence'].tolist()
+        num_sequences = len(context_sequences)
+        if num_sequences > 0:
+            break
+            
+    return context_sequences, num_sequences
+
+def get_context_sequences(context_id, context):
+    parsed_id = utils.extract_accid(context_id)
+    if parsed_id:
+        context_id_types = ['swissprot_id', 'id']
+        context_sequences, num_sequences = check_context_id_types(
+            parsed_id,
+            context_id_types,
+            context
+        )    
+    else:
+        context_id_types = ['id']
+        context_sequences, num_sequences = check_context_id_types(
+            context_id,
+            context_id_types,
+            context
+        )
+
+    return context_sequences, num_sequences
+
+
+def align_sequences(
+        context,
+        sequences,
+        width=15,
+        terminal='N',
+        redundancy_level='none',
+        first_protein_only=True,
+        original_row_merge='all',
+        original_sequences=None,
+        # TODO: Check this now False
+        require_context_id=False,
+        precomputed=None
+    ):
+    """
+    Take unaligned sequences and context. Map unaligned sequences to
+        context. Truncated prime segment to half width. Extend sequence
+        by half width in non-prime direction based on context. Replace
+        ambiguous residues in non-prime segment with "X". Fill missing
+        positions with "-".
+
+    Parameters:
+        context -- Pandas DataFrame. Expected columns: [
+                        'id' (ID from supplied FASTA file),
+                        'sequence' (sequence strings),
+                    ]
+        sequences -- Pandas DataFrame. Expected columns: [
+                        'context_id' (IDs matching context
+                                        elements, sep=';'),
+                        'sequence' (sequence strings),
+                    ]
+        width -- Int. Number of positions in aligned sequence output.
+        terminal -- String. 'n' for extension of N-term sequences,
+                        'c' for extension of C-term sequences,
+                        'both' for extension of intact peptides.
+
+    Returns:
+        aligned_sequences -- List. Aligned sequences of specified width
+                                containing prime segment from sequences
+                                and non-prime segment from matching
+                                context.
+    """
+
+    non_prime_width = width // 2
+
+    # Remove exact peptides and protein ID duplicates unless disabled.
+    if redundancy_level != 'none':
+        sequences.drop_duplicates(inplace=True) 
+
+    # Generate aligned sequence by mapping sequence segments to context.
+    aligned_sequences = []
+    for i, sequence in sequences.iterrows():
+        # Select pre-mapped context elements if available.
+        try:
+            context_ids = sequence['context_id'].replace(' ', '').split(';')
+        except:
+            # Exclude sequence if no IDs are required but not provided.
+            if require_context_id:
+                continue
+            # Otherwise, try matching against all context sequences.
+            else:
+                context_ids = get_all_ids_from_context(context, precomputed)
+                context_elements = context['sequence'].tolist()
+                first_protein_only = False
+        else:            
+            # Match against all context sequences if ID required and
+            # IDs column is present but blank.
+            if (len(max(context_ids, key=len)) == 0) and not require_context_id:
+                context_ids = get_all_ids_from_context(context, precomputed)
+                context_elements = context['sequence'].tolist()
+                first_protein_only = False
+            # Otherwise exclude sequence.
+            elif len(max(context_ids, key=len)) == 0:
+                continue
+            else:
+                swissprot_ids = []
+                context_elements = []
+                for context_id in context_ids:
+                    # Special case for precoumpted human Swiss-Prot.
+                    if precomputed is not None and os.path.basename(precomputed) in PRECOMPUTED_FILES['swissprot_human']:
+                        parsed_id = utils.extract_accid(context_id)
+                        if SWISSPROT_ACCESSION_PATTERN.match(parsed_id):
+                            swissprot_sequences = context[
+                                context['swissprot_id'] == parsed_id
+                            ]['sequence'].tolist()
+                            num_sequences = len(swissprot_sequences)
+                            if  num_sequences == 1:
+                                swissprot_ids.append(parsed_id)
+                                context_elements += swissprot_sequences
+                                if first_protein_only:
+                                    break
+                            elif num_sequences > 1:
+                                raise AssertionError(
+                                    '{} was found more than one time in the proteome.'.format(
+                                        parsed_id
+                                    )
+                                )
+                    else:
+                        # Get context sequences using provided ID.
+                        context_sequences, num_sequences = get_context_sequences(context_id, context)
+                        if num_sequences == 1:
+                            context_elements += context_sequences
+                            if first_protein_only:
+                                break
+                        elif num_sequences > 1:
+                            raise AssertionError(
+                                '{} was found more than one time in the proteome.'.format(
+                                    context_id
+                                )
+                            )
+                if len(swissprot_ids) > 0:
+                    context_ids = swissprot_ids
+
+        # Regular expression matching of sequence to context.
+        extended_sequences = {}
+        for j, context_element in enumerate(context_elements):
+            matches = match_segment_to_context(
+                sequence['sequence'].rstrip().upper(),
+                context_element,
+                width,
+                non_prime_width,
+                terminal
+            )
+            if matches.n_term or matches.c_term:
+                context_id = context_ids[j]
+                extended_sequences[context_id] = ExtendedSequences(
+                    n_term=set(),
+                    c_term=set()
+                )
+                for n_term_match in sorted(list(matches.n_term)):
+                    extended_sequences[context_id].n_term.add(n_term_match)
+                for c_term_match in sorted(list(matches.c_term)):
+                    extended_sequences[context_id].c_term.add(c_term_match)
+
+        # Add all aligned instances of peptide if redundancy_level is 'none'.
+        if original_row_merge == 'none':
+            for context_id, context_element_matches in extended_sequences.items():
+                for extended_sequence in sorted(list(context_element_matches.n_term)):
+                    aligned_sequences.append([i, extended_sequence, context_id])
+                for extended_sequence in sorted(list(context_element_matches.c_term)):
+                    aligned_sequences.append([i, extended_sequence, context_id])
+        # Merge aligned instances of peptide at protein level otherwise.
+        elif original_row_merge == 'protein':
+            for context_id, context_element_matches in extended_sequences.items():
+                if context_element_matches.n_term:
+                    aligned_sequences.append(
+                        [i, merge_sequences(context_element_matches.n_term), context_id]
+                    )
+                if context_element_matches.c_term:
+                    aligned_sequences.append(
+                        [i, merge_sequences(context_element_matches.c_term), context_id]
+                    )
+        elif original_row_merge == 'all':
+            context_ids = []
+            all_extended_sequences = ExtendedSequences(
+                n_term=set(),
+                c_term=set()
+            )
+            for context_id, context_element_matches in extended_sequences.items():
+                for extended_sequence in context_element_matches.n_term:
+                    all_extended_sequences.n_term.add(extended_sequence)
+                for extended_sequence in context_element_matches.c_term:
+                    all_extended_sequences.c_term.add(extended_sequence)
+                context_ids.append(context_id)
+            context_id = '; '.join(context_ids)
+            if all_extended_sequences.n_term:
+                aligned_sequences.append(
+                    [i, merge_sequences(all_extended_sequences.n_term), context_id]
+                )
+            if all_extended_sequences.c_term:
+                aligned_sequences.append(
+                    [i, merge_sequences(all_extended_sequences.c_term), context_id]
+                )
+
+
+    # Generate aligned sequence data frame for redundancy processing.
+    aligned_sequences_df = pd.DataFrame(
+        aligned_sequences,
+        columns=['original_row', 'extended_sequence', 'context_id']
+    )
+
+    # Redundancy handling.
+    if redundancy_level == 'protein':
+        aligned_sequences_df.drop_duplicates(
+            subset=['extended_sequence', 'context_id'],
+            inplace=True
+        )
+    elif redundancy_level == 'sequence':
+        aligned_sequences_df.drop_duplicates(
+            subset=['extended_sequence'],
+            inplace=True
+        )
+
+    # Update tabular output DataFrame.
+    if original_sequences is not None:
+        aligned_sequence_list = []
+        matched_context_id_list = []
+        for i, original_row in original_sequences.iterrows():
+            aligned_row_results = aligned_sequences_df[
+                aligned_sequences_df['original_row'] == i
+            ]
+            aligned_sequence = '; '.join(aligned_row_results['extended_sequence'].tolist())
+            aligned_sequence_list.append(
+                aligned_sequence if aligned_sequence != '' else np.nan
+            )
+            matched_context_id = '; '.join(aligned_row_results['context_id'].tolist())
+            matched_context_id_list.append(
+                matched_context_id if matched_context_id != '' else np.nan
+
+            )
+        original_sequences['aligned_sequence'] = aligned_sequence_list
+        original_sequences['matched_context_id'] = matched_context_id_list
+
+    aligned_sequences = aligned_sequences_df['extended_sequence'].tolist()
+
+    return aligned_sequences
+
+def peptides_to_sample(
+        peptides,
+        context,
+        background,
+        center=True,
+        width=15,
+        terminal='N',
+        redundancy_level='none',
+        first_protein_only=True,
+        original_row_merge='all',
+        require_context_id=True
+    ):
+    """
+    Align peptides and return data frame of positional residues.
+
+    Parameters:
+        peptides --
+        context --
+        width --
+        terminal --
+
+    Returns:
+        sample -- Sample instance.
+    """
+
+    original_sequences = peptides.copy()
+    if len(original_sequences.columns) == 1:
+        original_sequences.columns = [
+            'input_sequence',
+        ]
+    elif len(original_sequences.columns) == 2:
+        original_sequences.columns = [
+            'input_sequence',
+            'input_context_id',
+        ]
+    else:
+        original_sequences.rename(
+            columns={
+                original_sequences.columns[0]: 'input_sample_name',
+                original_sequences.columns[1]: 'input_sequence',
+                original_sequences.columns[2]: 'input_context_id',
+            },
+            inplace=True
+        )
+
+    aligned_sequences = align_sequences(
+        context,
+        peptides,
+        width=width,
+        terminal=terminal,
+        redundancy_level=redundancy_level,
+        first_protein_only=first_protein_only,
+        original_row_merge=original_row_merge,
+        original_sequences=original_sequences,
+        require_context_id=require_context_id,
+        precomputed=background.precomputed
+    )
+    sequence_df = sequences_to_df(
+        aligned_sequences,
+        center=center,
+        redundancy_level=redundancy_level
+    )
+    sequence_tensor = vectorize_sequences(sequence_df, background)
+    sample = Sample(
+        sequence_df=sequence_df,
+        sequence_tensor=sequence_tensor,
+        original_sequences=original_sequences
+    )
+
+    return sample
+
+def import_peptide_list(
+        peptide_list_file,
+        delimiter='\t',
+    ):
+    """
+    Import peptide list and row-matched protein IDs from text file.
+
+    Parameters:
+        peptide_list_file -- File-like object. Path to peptide list.
+        delimiter -- String. Peptide list file delimiter.
+        require_context_id -- Boolean. Discard rows without context ID.
+
+    Returns:
+        peptide_list -- Pandas DataFrame.
+    """
+
+    # Import peptide list from file.
+    peptide_list = pd.read_csv(peptide_list_file, delimiter=delimiter, header=0)
+
+    # Assign proper headers based on assumed data format.
+    if len(peptide_list.columns) == 1:
+        peptide_list.columns = ['sequence']
+    elif len(peptide_list.columns) == 2:
+        peptide_list.columns = ['sequence', 'context_id']
+    else:
+        peptide_list.rename(
+            columns={
+                peptide_list.columns[0]: 'sample_name',
+                peptide_list.columns[1]: 'sequence',
+                peptide_list.columns[2]: 'context_id'
+            },
+            inplace=True
+        )
+
+    return peptide_list
+
+def load_peptide_list_file(
+        peptide_list_path,
+        context,
+        background,
+        center=True,
+        width=15,
+        terminal='N',
+        require_context_id=False,
+        redundancy_level='none',
+        first_protein_only=True,
+        original_row_merge='all',
+        title=''
+    ):
+    """
+    Top-level helper function to load and extend peptides from text
+        file.
+
+    Parameters:
+        peptide_list_path -- String. Path to peptide list.
+        context -- Pandas DataFrame. Context proteome data frame.
+        terminal -- String. Defines extension direction.
+        require_context_id -- Boolean.
+        redundancy_level -- String. Defines level of repeated sequence
+                                redundancy elimination.
+        first_protein_only -- Boolean. Only use the first context ID
+                                for each row in the foreground data set
+                                during alignment and extension.
+        original_row_merge -- String. Defines behavior for merging
+                                multiple proteome matches from each
+                                row in the foreground data set during 
+                                alignment and extension.
+        title -- String. Analysis title.
+
+    Returns:
+        sample -- Sample instance.
+    """
+
+    # Detect delimiter from file extension (supports comma or tab).
+    delimiter = detect_delimiter(peptide_list_path)
+
+    # open peptide list file
+    with open(peptide_list_path, 'r') as peptide_list_file:
+        peptide_list = import_peptide_list(
+            peptide_list_file,
+            delimiter=delimiter
+        )
+    
+    try:
+        sample_peptides = dict(tuple(peptide_list.groupby('sample_name')))
+    except:
+        sample_peptides = {title: peptide_list}
+
+    samples = {}
+    for sample_name, peptides in sample_peptides.items():
+        samples[str(sample_name)] = peptides_to_sample(
+            peptides,
+            context,
+            background,
+            center=center,
+            width=width,
+            terminal=terminal,
+            redundancy_level=redundancy_level,
+            first_protein_only=first_protein_only,
+            original_row_merge=original_row_merge,
+            require_context_id=require_context_id
+        )
+
+    return samples
+
 class Background:
     """
     Methods and data structures for background frequency data.
@@ -215,7 +756,7 @@ class Background:
             initial_background_size_limit: Optional[int] = None,
             fast: bool = False,
             center: bool = False,
-            precomputed: str = ''
+            precomputed: str = None
         ):
         """
         Default background mode. Initialize from list of sequences.

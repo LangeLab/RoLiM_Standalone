@@ -8,8 +8,8 @@ import pandas as pd
 import scipy.stats as st
 from scipy import special
 
-from .plots import weblogo, generate_figures
-from .globals import ParentStats, CompoundResidue, Sample
+from src.globals import ParentStats
+from src.plots import weblogo, generate_figures
 
 def get_pattern_constituents(pattern_matrix, background):
     """
@@ -161,7 +161,8 @@ class Pattern:
             positional_weighting=True,
             multiple_testing_correction=True,
             allow_compound_residue_decomposition=True,
-            set_reduction=True
+            set_reduction=True,
+            verbose=False
         ):
         """
 
@@ -190,8 +191,8 @@ class Pattern:
         self.pattern_matrix = initial_pattern.copy()
         self.parent_stats = parent_stats
         self.invalid_pattern = False
-
-        print(' '*current_depth*4 + 'new:\n' + ' '*current_depth*4 + ''.join(self.character_pattern().tolist()))
+        if verbose:
+            print(' '*current_depth*4 + 'new:\n' + ' '*current_depth*4 + ''.join(self.character_pattern().tolist()))
 
         if allow_compound_residue_decomposition == True:
             self.removed_positional_residues = removed_positional_residues.copy()
@@ -237,14 +238,15 @@ class Pattern:
                         parent_stats.size - self.subset_tensor.shape[0],
                         parent_stats.expected_frequency
                     )
-                    print(''.join(self.character_pattern()))
-                    print(parent_stats.expected_frequency)
-                    print(parent_stats.size)
-                    print(parent_stats.expected_frequency * parent_stats.size)
-                    print(self.subset_tensor.shape[0])
-                    print(pattern_p_value)
-                    print(p_value_cutoff / parent_stats.bonferroni_m)
-                    print(self.removed_positional_residues)
+                    if verbose:
+                        print(''.join(self.character_pattern()))
+                        print(parent_stats.expected_frequency)
+                        print(parent_stats.size)
+                        print(parent_stats.expected_frequency * parent_stats.size)
+                        print(self.subset_tensor.shape[0])
+                        print(pattern_p_value)
+                        print(p_value_cutoff / parent_stats.bonferroni_m)
+                        print(self.removed_positional_residues)
                     # Remove from pattern list if p-value above cutoff.
                     if (
                         (pattern_p_value > (p_value_cutoff / parent_stats.bonferroni_m))
@@ -277,12 +279,13 @@ class Pattern:
 
                 # Fix positional residues present in all sequences.
                 self.fix_homogeneous_positional_residues()
-                print(
-                    (' ' * current_depth * 4)
-                    + 'homogeneous:\n'
-                    + (' ' * current_depth * 4)
-                    + ''.join(self.character_pattern().tolist())
-                )
+                if verbose:
+                    print(
+                        (' ' * current_depth * 4)
+                        + 'homogeneous:\n'
+                        + (' ' * current_depth * 4)
+                        + ''.join(self.character_pattern().tolist())
+                    )
                 
                 # Calculate positional residue frequencies from subset_tensor.
                 positional_residue_frequencies = self.calculate_frequencies()
@@ -1300,13 +1303,12 @@ class Pattern:
             logo_map -- String. Path to logo map file in SVG format.
         """
 
-
         fasta = '> \n' + '\n> \n'.join(self._sequence_strings)
 
         alphabet = list(self.background.alphabet) #create a copy of the alphabet list.
         if 'X' not in alphabet:
             alphabet.append('X')
-        logo_alphabet = weblogo.Alphabet(alphabet)
+        logo_alphabet = weblogo.Alphabet("".join(alphabet))
 
         baserules = [
             weblogo.SymbolColor("GSTYC", "green", "polar"),
@@ -1366,7 +1368,8 @@ class PatternContainer:
             multiple_testing_correction=True,
             positional_weighting=True,
             allow_compound_residue_decomposition=True,
-            set_reduction=True
+            set_reduction=True, 
+            verbose=False
         ):
         '''
         Initialize PatternContainer object and start recursive pattern
@@ -1434,7 +1437,8 @@ class PatternContainer:
                 fold_change_cutoff=fold_change_cutoff,
                 positional_weighting=positional_weighting,
                 multiple_testing_correction=multiple_testing_correction,
-                set_reduction=set_reduction
+                set_reduction=set_reduction, 
+                verbose=verbose
             )
         )
 
@@ -1614,7 +1618,6 @@ class PatternContainer:
     def generate_pattern_outputs(self, logo_maps=True):
         """Last steps for retained patterns."""
         
-
         pattern_directory = os.path.join(
             self.output_directory,
             'patterns'
