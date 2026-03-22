@@ -490,6 +490,21 @@ def generate_merops_heatmap(
         protease_pattern_heatmap_output_path
     )
 
+    # Export heatmap data as a tab-separated table.
+    pattern_labels = plots.generate_pattern_labels(position_labels, pattern_container)
+    protease_pattern_table_output_path = (
+        pattern_container.output_directory
+        + '/figures/'
+        + output_prefix
+        + '_protease_pattern_heatmap.txt'
+    )
+    plots.export_protease_heatmap_table(
+        non_exact_scoring_matrix,
+        pattern_labels,
+        protease_labels,
+        protease_pattern_table_output_path
+    )
+
 def extract_protease_substrate_patterns(
         background=None,
         percentage_frequency_cutoff=0.05,

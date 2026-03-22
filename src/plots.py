@@ -593,6 +593,36 @@ def generate_protease_pattern_heatmap(
     plt.tight_layout()
     plt.savefig(output_path, dpi=300)
 
+def export_protease_heatmap_table(
+        scoring_matrix,
+        pattern_labels,
+        protease_labels,
+        output_path
+    ):
+    """
+    Export the protease pattern heatmap data as a tab-separated text file.
+
+    The first row of scoring_matrix and first element of pattern_labels are
+    the column-header placeholders used by the heatmap; they are skipped here.
+
+    Parameters:
+        scoring_matrix   -- List of lists (rows = patterns incl. placeholder).
+        pattern_labels   -- List of strings (first entry is position header).
+        protease_labels  -- List of strings.
+        output_path      -- String. Path for the output .txt file.
+
+    Returns:
+        None
+    """
+    df = pd.DataFrame(
+        scoring_matrix[1:],
+        index=pattern_labels[1:],
+        columns=protease_labels
+    )
+    df.index.name = 'Pattern'
+    df.to_csv(output_path, sep='\t')
+
+
 def generate_figures(
         patterns,
         proteolysis_data=True,
@@ -671,6 +701,20 @@ def generate_figures(
             protease_labels,
             position_labels,
             protease_pattern_heatmap_output_path
+        )
+
+        # Export heatmap data as a tab-separated table.
+        pattern_labels = generate_pattern_labels(position_labels, patterns)
+        protease_pattern_table_output_path = os.path.join(
+            output_dir,
+            'summary',
+            output_prefix + '_protease_pattern_heatmap.txt'
+        )
+        export_protease_heatmap_table(
+            non_exact_scoring_matrix,
+            pattern_labels,
+            protease_labels,
+            protease_pattern_table_output_path
         )
 
         # Compute protease frequency matrix.
